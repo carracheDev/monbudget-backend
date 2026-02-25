@@ -1,0 +1,502 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// MODÈLES PRINCIPAUX
+// ============================================
+
+model Utilisateur {
+  id                String    @id @default(uuid())
+  firebaseUid       String    @unique
+  nomComplet        String
+  email             String    @unique
+  motDePasse        String    // ← AJOUTEZ CECI
+  telephone         String?
+  avatarUrl         String?
+  devise            String    @default("XOF")
+  
+  // Sécurité & Auth
+  emailVerifie      Boolean   @default(false)
+  telephoneVerifie  Boolean   @default(false)
+  derniereConnexion DateTime?
+  tentativeConnexion Int      @default(0)
+  bloqueJusqua      DateTime?
+  
+  // Timestamps
+  dateCreation      DateTime  @default(now())
+  dateModification  DateTime  @updatedAt
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  comptes           Compte[]
+  transactions      Transaction[]
+  budgets           Budget[]
+  objectifsEpargne  ObjectifEpargne[]
+  notifications     Notification[]
+  portefeuille      Portefeuille?
+  parametres        Parametres?
+  categories        Categorie[]
+  devices           Device[]
+  sessions          Session[]
+  recharges         Recharge[]
+  paiements         Paiement[]
+  
+  @@index([firebaseUid])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("utilisateurs")
+}
+
+// ============================================
+// COMPTES (Sources de fonds)
+// ============================================
+
+model Compte {
+  id                String    @id @default(uuid())
+  nom               String
+  type              TypeCompte @default(PRINCIPAL)
+  solde             Float     @default(0)
+  soldeInitial      Float     @default(0)
+  devise            String    @default("XOF")
+  estActif          Boolean   @default(true)
+  estDefaut         Boolean   @default(false)
+  
+  // Pour comptes externes (Mobile Money, banque)
+  operateur         String?
+  numeroTelephone   String?
+  referenceExterne  String?
+  
+  dateCreation      DateTime  @default(now())
+  dateModification  DateTime  @updatedAt
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+  
+  transactionsSource Transaction[] @relation("CompteSource")
+  transactionsDest   Transaction[] @relation("CompteDestination")
+  soldesHistorique   SoldeHistorique[]
+
+  @@index([utilisateurId])
+  @@index([deletedAt])
+  @@map("comptes")
+}
+
+// ============================================
+// CATÉGORIES
+// ============================================
+
+model Categorie {
+  id                String    @id @default(uuid())
+  nom               String
+  icone             String
+  couleur           String
+  type              TypeCategorie @default(DEPENSE)
+  estDefaut         Boolean   @default(false)
+  
+  dateCreation      DateTime  @default(now())
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  utilisateurId     String?
+  utilisateur       Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  
+  transactions      Transaction[]
+  budgets           Budget[]
+
+  @@unique([nom, utilisateurId])
+  @@index([utilisateurId])
+  @@index([type])
+  @@index([deletedAt])
+  @@map("categories")
+}
+
+// ============================================
+// TRANSACTIONS (Cœur métier)
+// ============================================
+
+model Transaction {
+  id                String    @id @default(uuid())
+  reference         String    @unique @default(uuid())
+  montant           Float
+  type              TypeTransaction
+  description       String?
+  date              DateTime  @default(now())
+  statut            StatutTransaction @default(VALIDEE)
+  
+  // Métadonnées
+  latitude          Float?
+  longitude         Float?
+  adresse           String?
+  pieceJointeUrl    String?
+  
+  // Idempotence
+  idempotencyKey    String?   @unique
+  
+  dateCreation      DateTime  @default(now())
+  dateModification  DateTime  @updatedAt
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations - Utilisateur
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+  
+  // Relations - Catégorie
+  categorieId       String
+  categorie         Categorie @relation(fields: [categorieId], references: [id])
+  
+  // Relations - Comptes
+  compteSourceId    String?
+  compteSource      Compte?   @relation("CompteSource", fields: [compteSourceId], references: [id])
+  
+  compteDestId      String?
+  compteDest        Compte?   @relation("CompteDestination", fields: [compteDestId], references: [id])
+  
+  // Relation - Budget
+  budgetId          String?
+  budget            Budget?   @relation(fields: [budgetId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([date])
+  @@index([categorieId])
+  @@index([compteSourceId])
+  @@index([idempotencyKey])
+  @@index([deletedAt])
+  @@map("transactions")
+}
+
+// ============================================
+// SOLDES HISTORIQUES
+// ============================================
+
+model SoldeHistorique {
+  id                String    @id @default(uuid())
+  soldeAvant        Float
+  soldeApres        Float
+  difference        Float
+  raison            String
+  referenceId       String?
+  
+  date              DateTime  @default(now())
+
+  // Relations
+  compteId          String
+  compte            Compte    @relation(fields: [compteId], references: [id])
+
+  @@index([compteId])
+  @@index([date])
+  @@map("soldes_historique")
+}
+
+// ============================================
+// BUDGETS
+// ============================================
+
+model Budget {
+  id                String    @id @default(uuid())
+  montantLimite     Float
+  periode           PeriodeBudget @default(MENSUEL)
+  dateDebut         DateTime  @default(now())
+  dateFin           DateTime?
+  alerteSeuil       Int       @default(85)
+  alerteEnvoyee     Boolean   @default(false)
+  estActif          Boolean   @default(true)
+  
+  dateCreation      DateTime  @default(now())
+  dateModification  DateTime  @updatedAt
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+  
+  categorieId       String
+  categorie         Categorie @relation(fields: [categorieId], references: [id])
+  
+  transactions      Transaction[]
+
+  @@unique([utilisateurId, categorieId, periode, dateDebut])
+  @@index([utilisateurId])
+  @@index([categorieId])
+  @@index([deletedAt])
+  @@map("budgets")
+}
+
+// ============================================
+// ÉPARGNE
+// ============================================
+
+model ObjectifEpargne {
+  id                String    @id @default(uuid())
+  nom               String
+  icone             String
+  description       String?
+  montantCible      Float
+  montantActuel     Float     @default(0)
+  dateEcheance      DateTime
+  statut            StatutObjectif @default(ACTIF)
+  
+  dateCreation      DateTime  @default(now())
+  dateModification  DateTime  @updatedAt
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+  
+  contributions     Contribution[]
+
+  @@index([utilisateurId])
+  @@index([statut])
+  @@index([deletedAt])
+  @@map("objectifs_epargne")
+}
+
+model Contribution {
+  id                String    @id @default(uuid())
+  montant           Float
+  date              DateTime  @default(now())
+  note              String?
+  
+  // Relations
+  objectifId        String
+  objectif          ObjectifEpargne @relation(fields: [objectifId], references: [id])
+
+  @@index([objectifId])
+  @@index([date])
+  @@map("contributions")
+}
+
+// ============================================
+// PORTEFEUILLE (Mobile Money intégré)
+// ============================================
+
+model Portefeuille {
+  id                String    @id @default(uuid())
+  solde             Float     @default(0)
+  soldeBloque       Float     @default(0)
+  numeroPrincipal   String?
+  operateurDefaut   String?
+  
+  dateModification  DateTime  @updatedAt
+
+  // Relations
+  utilisateurId     String    @unique
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@map("portefeuilles")
+}
+
+model Recharge {
+  id                String    @id @default(uuid())
+  montant           Float
+  operateur         String
+  numeroTelephone   String
+  referenceOperateur String?
+  statut            StatutOperation @default(EN_COURS)
+  dateCreation      DateTime  @default(now())
+  dateValidation    DateTime?
+  
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([statut])
+  @@map("recharges")
+}
+
+model Paiement {
+  id                String    @id @default(uuid())
+  montant           Float
+  operateur         String
+  numeroDestinataire String
+  description       String?
+  referenceOperateur String?
+  statut            StatutOperation @default(EN_COURS)
+  dateCreation      DateTime  @default(now())
+  dateValidation    DateTime?
+  
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([statut])
+  @@map("paiements")
+}
+
+// ============================================
+// NOTIFICATIONS & FCM
+// ============================================
+
+model Notification {
+  id                String    @id @default(uuid())
+  titre             String
+  message           String
+  estLu             Boolean   @default(false)
+  type              TypeNotification
+  donnees           Json?
+  
+  dateCreation      DateTime  @default(now())
+  dateLecture       DateTime?
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([estLu])
+  @@index([type])
+  @@index([deletedAt])
+  @@map("notifications")
+}
+
+model Device {
+  id                String    @id @default(uuid())
+  tokenFcm          String    @unique
+  plateforme        String
+  modele            String?
+  appVersion        String?
+  
+  estActif          Boolean   @default(true)
+  derniereUtilisation DateTime @default(now())
+  
+  dateCreation      DateTime  @default(now())
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([tokenFcm])
+  @@map("devices")
+}
+
+// ============================================
+// SESSIONS & SÉCURITÉ
+// ============================================
+
+model Session {
+  id                String    @id @default(uuid())
+  token             String    @unique
+  ipAdresse         String?
+  userAgent         String?
+  estValide         Boolean   @default(true)
+  
+  dateCreation      DateTime  @default(now())
+  dateExpiration    DateTime
+  dateRevocation    DateTime?
+
+  // Relations
+  utilisateurId     String
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@index([utilisateurId])
+  @@index([token])
+  @@index([estValide])
+  @@map("sessions")
+}
+
+// ============================================
+// PARAMÈTRES
+// ============================================
+
+model Parametres {
+  id                String    @id @default(uuid())
+  theme             Theme     @default(LIGHT)
+  langue            Langue    @default(FR)
+  biometrie         Boolean   @default(false)
+  notificationsPush Boolean   @default(true)
+  notificationsEmail Boolean  @default(true)
+  pinCode           String?
+  
+  dateModification  DateTime  @updatedAt
+
+  // Relations
+  utilisateurId     String    @unique
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id])
+
+  @@map("parametres")
+}
+
+// ============================================
+// ÉNUMÉRATIONS
+// ============================================
+
+enum TypeCompte {
+  PRINCIPAL
+  EPARGNE
+  MOBILE_MONEY
+  BANQUE
+  CASH
+  AUTRE
+}
+
+enum TypeCategorie {
+  DEPENSE
+  REVENU
+  TRANSFERT
+}
+
+enum TypeTransaction {
+  DEPENSE
+  REVENU
+  TRANSFERT
+}
+
+enum StatutTransaction {
+  EN_ATTENTE
+  VALIDEE
+  ANNULEE
+  REMBOURSEE
+}
+
+enum StatutOperation {
+  EN_COURS
+  VALIDEE
+  ECHOUEE
+  ANNULEE
+}
+
+enum PeriodeBudget {
+  HEBDOMADAIRE
+  MENSUEL
+  TRIMESTRIEL
+  ANNUEL
+}
+
+enum StatutObjectif {
+  ACTIF
+  TERMINE
+  ARCHIVE
+}
+
+enum TypeNotification {
+  BUDGET
+  TRANSACTION
+  OBJECTIF
+  SYSTEME
+  SECURITE
+  MARKETING
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum Langue {
+  FR
+  EN
+  PT
+}
