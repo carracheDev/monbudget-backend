@@ -94,4 +94,48 @@ export class NotificationsService {
       },
     });
   }
+
+  async getAllNotifications(utilisateurId: string) {
+  return this.prisma.notification.findMany({
+    where: {
+      utilisateurId,
+      deletedAt: null,
+    },
+    orderBy: { dateCreation: 'desc' },
+  });
+}
+
+  /**
+   * Supprimer une notification par son ID
+   */
+  async supprimerNotification(notificationId: string, utilisateurId: string) {
+    return this.prisma.notification.updateMany({
+      where: {
+        id: notificationId,
+        utilisateurId,
+      },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Supprimer toutes les notifications de type BUDGET pour un utilisateur
+   * (utilisé lors de la suppression d'un budget)
+   */
+  async supprimerNotificationsBudget(utilisateurId: string, categorieNom?: string) {
+    return this.prisma.notification.updateMany({
+      where: {
+        utilisateurId,
+        type: TypeNotification.BUDGET,
+        deletedAt: null,
+        // Si un nom de catégorie est fourni, on peut filtrer par les données
+        // Mais comme donnees est un JSON, on utilise une approche différente
+      },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+  }
 }

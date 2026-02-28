@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBudgetDto } from './dto/create-budget.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BudgetsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateBudgetDto) {
     // Vérifier si un budget existe déjà pour cette catégorie et période
@@ -63,10 +67,14 @@ export class BudgetsService {
       throw new NotFoundException('Budget introuvable');
     }
 
-    // Soft delete
+    // Soft delete du budget
     await this.prisma.budget.update({
       where: { id: budgetId },
       data: { deletedAt: new Date() },
     });
+
+    // Supprimer toutes les notifications de type BUDGET pour cet utilisateur
+    // car elles ne sont plus pertinentes une fois le budget supprimé
+    await this.notificationsService.supprimerNotificationsBudget(userId);
   }
 }
