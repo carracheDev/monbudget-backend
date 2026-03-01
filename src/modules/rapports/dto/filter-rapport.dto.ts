@@ -1,5 +1,7 @@
+// ✅ CORRIGER filter-rapport.dto.ts
 import { PeriodeBudget } from '@prisma/client';
 import { IsEnum, IsNumber, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class FilterRapportDto {
   @IsEnum(PeriodeBudget)
@@ -7,9 +9,11 @@ export class FilterRapportDto {
 
   @IsOptional()
   @IsNumber()
-  mois?: string; // ex: "2026-02"
+  @Type(() => Number) // ✅ convertit string → number automatiquement
+  mois?: number;
 
   @IsOptional()
   @IsNumber()
-  annee?: string; // ex: 2026
+  @Type(() => Number) // ✅ convertit string → number automatiquement
+  annee?: number;
 }

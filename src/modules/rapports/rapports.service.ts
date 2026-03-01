@@ -10,31 +10,57 @@ import ExcelJS from 'exceljs';
 export class RapportsService {
   constructor(private prisma: PrismaService) {}
 
-  // Calculer la date de début selon la période (méthode privée réutilisable)
+  // Calculer la date de début selon la période et les paramètres fournis
   private getDebutPeriode(dto: FilterRapportDto): Date {
-    const debut = new Date();
+    // Utiliser le mois et l'année fournis par l'utilisateur, sinon defaults
+    const annee = dto.annee ?? new Date().getFullYear();
+    // Mois dans le DTO est 1-based (1-12), Date.getMonth() est 0-based (0-11)
+    const mois = dto.mois ? dto.mois - 1 : new Date().getMonth();
+    
+    const debut = new Date(annee, mois, 1);
     debut.setHours(0, 0, 0, 0);
 
     if (dto.periode === 'MENSUEL') {
-      debut.setDate(1);
+      // Déjà au 1er du mois
     } else if (dto.periode === 'TRIMESTRIEL') {
-      debut.setMonth(debut.getMonth() - 3);
+      // Reculer de 2 mois pour avoir le début du trimestre
+      debut.setMonth(debut.getMonth() - 2);
     } else if (dto.periode === 'ANNUEL') {
-      debut.setMonth(0, 1);
+      debut.setMonth(0, 1); // 1er janvier
     }
 
     return debut;
   }
 
+  // Calculer la date de fin selon la période
+  private getFinPeriode(dto: FilterRapportDto): Date {
+    const annee = dto.annee ?? new Date().getFullYear();
+    const mois = dto.mois ? dto.mois - 1 : new Date().getMonth();
+    
+    const fin = new Date(annee, mois + 1, 0); // Dernier jour du mois
+    fin.setHours(23, 59, 59, 999);
+
+    if (dto.periode === 'MENSUEL') {
+      // Fin du mois
+    } else if (dto.periode === 'TRIMESTRIEL') {
+      fin.setMonth(fin.getMonth() + 2); // Fin du trimestre
+    } else if (dto.periode === 'ANNUEL') {
+      fin.setMonth(11, 31); // 31 décembre
+    }
+
+    return fin;
+  }
+
   async getResume(userId: string, dto: FilterRapportDto) {
     const debutPeriode = this.getDebutPeriode(dto);
+    const finPeriode = this.getFinPeriode(dto);
 
     const [depenses, revenus] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: {
           utilisateurId: userId,
           type: TypeTransaction.DEPENSE,
-          date: { gte: debutPeriode },
+          date: { gte: debutPeriode, lte: finPeriode },
           deletedAt: null,
         },
         _sum: { montant: true },
@@ -43,7 +69,7 @@ export class RapportsService {
         where: {
           utilisateurId: userId,
           type: TypeTransaction.REVENU,
-          date: { gte: debutPeriode },
+          date: { gte: debutPeriode, lte: finPeriode },
           deletedAt: null,
         },
         _sum: { montant: true },
@@ -63,13 +89,14 @@ export class RapportsService {
 
   async getParCategorie(userId: string, dto: FilterRapportDto) {
     const debutPeriode = this.getDebutPeriode(dto);
+    const finPeriode = this.getFinPeriode(dto);
 
     const depensesParCategorie = await this.prisma.transaction.groupBy({
       by: ['categorieId'],
       where: {
         utilisateurId: userId,
         type: TypeTransaction.DEPENSE,
-        date: { gte: debutPeriode },
+        date: { gte: debutPeriode, lte: finPeriode },
         deletedAt: null,
       },
       _sum: { montant: true },
@@ -148,33 +175,195 @@ export class RapportsService {
     const categories = await this.getParCategorie(userId, dto);
 
     // 2. Créer le document PDF
-    const doc = new PDFDocument();
+    const doc = new PDFDocument({ margin: 50 });
 
     // 3. Headers HTTP pour téléchargement
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=rapport.pdf');
     doc.pipe(res);
 
-    // 4. Contenu du PDF
+    // Couleurs de l'app
+    const primary = '#E53935'; // Rouge
+    const success = '#2E7D32'; // Vert revenus
+    const warning = '#F57C00'; // Orange dépenses
+    const savings = '#1565C0'; // Bleu solde
+    const textDark = '#212121';
+    const textLight = '#757575';
+    const white = '#FFFFFF';
+    const lightGray = '#F5F5F5';
+
+    // ============ PAGE 1 - En-tête coloré ============
+    // Fond d'en-tête rouge
+    doc.rect(0, 0, doc.page.width, 100).fill(primary);
+    
+    // Titre en blanc
     doc
-      .fontSize(20)
-      .text('MonBudget - Rapporet Financier', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(14).text(`Période : ${dto.periode}`);
-    doc.moveDown();
-    doc.text(`Revenus    : ${resume.totalRevenus} XOF`);
-    doc.text(`Dépenses   : ${resume.totalDepenses} XOF`);
-    doc.text(`Solde      : ${resume.solde} XOF`);
-    doc.moveDown();
-    doc.fontSize(16).text('Détail par catégorie');
-    doc.moveDown();
-    categories.forEach((cat) => {
-      doc
-        .fontSize(12)
-        .text(
-          `${cat.icone} ${cat.categorie} : ${cat.montant} XOF (${cat.pourcentage}%)`,
-        );
-    });
+      .fillColor(white)
+      .fontSize(24)
+      .font('Helvetica-Bold')
+      .text('MonBudget', 50, 35, { align: 'center' });
+    doc
+      .fontSize(14)
+      .font('Helvetica')
+      .text('Rapport Financier', { align: 'center' });
+    
+    // Réinitialiser la couleur
+    doc.fillColor(textDark);
+
+    // ============ Informations période ============
+    doc.moveDown(3);
+    doc.fontSize(12).text(`Période : ${dto.periode}`, 50);
+    doc.fontSize(10).fillColor(textLight).text(
+      `Généré le : ${new Date().toLocaleDateString('fr-FR', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`,
+    );
+    doc.fillColor(textDark);
+    doc.moveDown(2);
+
+    // ============ Section Résumé ============
+    // Titre de section avec fond
+    doc.rect(50, doc.y, doc.page.width - 100, 25).fill(lightGray);
+    doc
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .fillColor(primary)
+      .text('📊 Résumé Financier', 60, doc.y - 20);
+    doc.moveDown(2);
+    doc.fillColor(textDark);
+
+    // Tableau des chiffres clés
+    const startY = doc.y;
+    const colWidth = (doc.page.width - 100) / 3;
+
+    // Revenus - Vert
+    doc.rect(50, startY, colWidth - 10, 60).fill(success).fillColor(white);
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .text('REVENUS', 55, startY + 10, { width: colWidth - 20, align: 'center' });
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(
+        `${resume.totalRevenus.toLocaleString('fr-FR')} XOF`,
+        55,
+        startY + 30,
+        { width: colWidth - 20, align: 'center' },
+      );
+
+    // Dépenses - Orange
+    doc
+      .rect(50 + colWidth, startY, colWidth - 10, 60)
+      .fill(warning)
+      .fillColor(white);
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .text('DÉPENSES', 55 + colWidth, startY + 10, { width: colWidth - 20, align: 'center' });
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(
+        `${resume.totalDepenses.toLocaleString('fr-FR')} XOF`,
+        55 + colWidth,
+        startY + 30,
+        { width: colWidth - 20, align: 'center' },
+      );
+
+    // Solde - Bleu
+    doc
+      .rect(50 + colWidth * 2, startY, colWidth - 10, 60)
+      .fill(savings)
+      .fillColor(white);
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .text('SOLDE', 55 + colWidth * 2, startY + 10, { width: colWidth - 20, align: 'center' });
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(
+        `${resume.solde.toLocaleString('fr-FR')} XOF`,
+        55 + colWidth * 2,
+        startY + 30,
+        { width: colWidth - 20, align: 'center' },
+      );
+
+    doc.fillColor(textDark).moveDown(5);
+
+    // ============ Section Catégories ============
+    // Titre de section
+    doc.rect(50, doc.y, doc.page.width - 100, 25).fill(lightGray);
+    doc
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .fillColor(primary)
+      .text('📁 Dépenses par Catégorie', 60, doc.y - 20);
+    doc.moveDown(2);
+    doc.fillColor(textDark);
+
+    // Liste des catégories avec leurs couleurs
+    if (categories.length === 0) {
+      doc.fontSize(10).fillColor(textLight).text('Aucune dépense enregistrée pour cette période.');
+    } else {
+      categories.forEach((cat, index) => {
+        const y = doc.y;
+        const lineHeight = 25;
+        
+        // Ligne de fond alternée
+        if (index % 2 === 0) {
+          doc.rect(50, y, doc.page.width - 100, lineHeight).fill(lightGray);
+        }
+        
+        // Indicateur de couleur de la catégorie
+        const catColor = cat.couleur || primary;
+        doc.circle(65, y + lineHeight / 2, 5).fill(catColor);
+        
+        // Nom de la catégorie avec icône
+        doc
+          .fillColor(textDark)
+          .fontSize(11)
+          .font('Helvetica')
+          .text(`${cat.icone || '📁'} ${cat.categorie || 'Sans catégorie'}`, 80, y + 7);
+        
+        // Pourcentage
+        doc
+          .fillColor(textLight)
+          .fontSize(10)
+          .text(`${cat.pourcentage}%`, doc.page.width - 120, y + 7);
+        
+        // Montant aligné à droite
+        doc
+          .fillColor(textDark)
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .text(
+            `${cat.montant.toLocaleString('fr-FR')} XOF`,
+            doc.page.width - 100,
+            y + 7,
+            { width: 90, align: 'right' },
+          );
+        
+        doc.moveDown();
+      });
+    }
+
+    // ============ Pied de page ============
+    doc.moveDown(3);
+    doc
+      .fillColor(textLight)
+      .fontSize(8)
+      .text(
+        'Rapport généré par MonBudget - Application de gestion de finances personnelles',
+        50,
+        doc.page.height - 50,
+        { align: 'center' },
+      );
 
     doc.end();
   }
