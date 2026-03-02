@@ -5,7 +5,6 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { FlutterwaveService } from './flutterwave.service';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { FlutterwaveService } from './flutterwave.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [PortefeuilleService, FlutterwaveService],
   controllers: [PortefeuilleController],
 })
 export class PortefeuilleModule {}
