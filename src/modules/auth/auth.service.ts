@@ -202,4 +202,12 @@ export class AuthService {
     // TODO: Implémenter la logique de vérification
     return { message: 'Email vérifié avec succès' };
   }
+
+  // auth.service.ts
+async saveFcmToken(userId: string, fcmToken: string) {
+  return this.prisma.utilisateur.update({
+    where: { id: userId },
+    data: { fcmToken },
+  });
+}
 }
