@@ -16,7 +16,7 @@ import { ParametresModule } from './modules/parametres/parametres.module';
   imports: [
     ConfigModule.forRoot({
        isGlobal: true,
-      envFilePath: process.env.NODE_ENV === 'production' ? '.env.production' : '.env.local',
+      envFilePath: process.env.NODE_ENV === 'production' ? '.env' : '.env.local',
       }),
     PrismaModule,
     AuthModule,
