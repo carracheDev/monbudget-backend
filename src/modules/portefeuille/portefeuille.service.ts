@@ -2,13 +2,11 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateRechargeDto } from './dto/create-recharge.dto';
 import { CreatePaiementDto } from './dto/create-paiement.dto';
-import { FlutterwaveService } from './flutterwave.service';
 
 @Injectable()
 export class PortefeuilleService {
   constructor(
     private prisma: PrismaService,
-    private flutterwaveService: FlutterwaveService,
   ) {}
 
   async getPortefeuille(userId: string) {

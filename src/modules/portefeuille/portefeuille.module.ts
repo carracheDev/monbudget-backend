@@ -20,5 +20,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     }),
   ],
   controllers: [PortefeuilleController],
+  providers: [PortefeuilleService],
 })
 export class PortefeuilleModule {}
