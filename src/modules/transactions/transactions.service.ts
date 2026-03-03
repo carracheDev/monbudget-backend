@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -12,6 +13,8 @@ import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
@@ -21,7 +24,6 @@ export class TransactionsService {
   async create(userId: string, dto: CreateTransactionDto) {
     let budgetData: { pourcentage: number; categorieNom: string } | null = null;
 
-    // ✅ Transaction Prisma - PAS de notifications dedans
     const transaction = await this.prisma.$transaction(async (tx) => {
       let compteId = dto.compteId;
       if (!compteId) {
@@ -46,9 +48,7 @@ export class TransactionsService {
       const compte = await tx.compte.findFirst({
         where: { id: compteId, utilisateurId: userId, deletedAt: null },
       });
-      if (!compte) {
-        throw new NotFoundException('Compte non trouvé');
-      }
+      if (!compte) throw new NotFoundException('Compte non trouvé');
 
       if (
         (dto.type === TypeTransaction.DEPENSE ||
@@ -80,7 +80,6 @@ export class TransactionsService {
         data: { solde: nouveauSolde },
       });
 
-      // ✅ On calcule le budget DANS la transaction mais on NE notifie PAS ici
       if (dto.type === TypeTransaction.DEPENSE && dto.categorieId) {
         budgetData = await this.verifierBudget(tx, userId, dto.categorieId);
       }
@@ -88,9 +87,7 @@ export class TransactionsService {
       return transaction;
     });
 
-    // ✅ Toutes les notifications EN DEHORS de la transaction Prisma
-
-    // Notification transaction
+    // ✅ Notification transaction (hors $transaction)
     try {
       const user = await this.prisma.utilisateur.findUnique({
         where: { id: userId },
@@ -104,19 +101,26 @@ export class TransactionsService {
         );
       }
     } catch (e) {
-      console.error('❌ Erreur notification transaction:', e);
+      this.logger.error(`❌ Erreur notification transaction: ${e}`);
     }
 
-    // ✅ Notification budget si dépassement 85%
-    if (budgetData && (budgetData as any).pourcentage >= 85) {
-      try {
-        await this.notificationsService.notifierBudgetDepasse(
-          userId,
-          (budgetData as any).categorieNom,
-          (budgetData as any).pourcentage,
-        );
-      } catch (e) {
-        console.error('❌ Erreur notification budget:', e);
+    // ✅ Notification budget si seuil atteint (hors $transaction)
+    if (budgetData) {
+      const { pourcentage, categorieNom } = budgetData as {
+        pourcentage: number;
+        categorieNom: string;
+      };
+      this.logger.log(`[Budget] ${categorieNom} — ${pourcentage.toFixed(1)}% utilisé`);
+      if (pourcentage >= 85) {
+        try {
+          await this.notificationsService.notifierBudgetDepasse(
+            userId,
+            categorieNom,
+            pourcentage,
+          );
+        } catch (e) {
+          this.logger.error(`❌ Erreur notification budget: ${e}`);
+        }
       }
     }
 
@@ -196,7 +200,7 @@ export class TransactionsService {
     };
   }
 
-  // ✅ Retourne les données du budget sans appeler les notifications
+  // ✅ Le aggregate voit déjà la nouvelle transaction committée — pas besoin de l'ajouter
   private async verifierBudget(
     tx: Prisma.TransactionClient,
     userId: string,
@@ -231,6 +235,10 @@ export class TransactionsService {
 
     const montantTotal = totalDepense._sum.montant ?? 0;
     const pourcentage = (montantTotal / budget.montantLimite) * 100;
+
+    this.logger.log(
+      `[Budget] ${budget.categorie.nom}: ${montantTotal}/${budget.montantLimite} = ${pourcentage.toFixed(1)}%`,
+    );
 
     return {
       pourcentage,
