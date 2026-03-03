@@ -71,3 +71,4 @@ export class FirebaseService implements OnModuleInit {
       this.logger.error('❌ Erreur notification:', error);
     }
   }
+}
