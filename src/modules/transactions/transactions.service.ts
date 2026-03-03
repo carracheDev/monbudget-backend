@@ -39,18 +39,6 @@ export class TransactionsService {
           compteId = compteDefaut.id;
         }
       }
-        const user = await this.prisma.utilisateur.findUnique({
-        where: { id: userId },
-        });
-
-        if (user?.fcmToken) {
-        await this.firebase.sendNotification(
-        user.fcmToken,
-        '💸 Nouvelle transaction',
-        `${dto.type === 'DEPENSE' ? '- ' : '+ '}${dto.montant} F enregistré`,
-       );
-     }
-
       const compte = await tx.compte.findFirst({
         where: { id: compteId, utilisateurId: userId, deletedAt: null },
       });
@@ -90,6 +78,18 @@ export class TransactionsService {
 
       if (dto.type === TypeTransaction.DEPENSE && dto.categorieId) {
         await this.verifierBudget(tx, userId, dto.categorieId);
+      }
+
+      // ✅ Notification envoyée APRÈS succès de la transaction
+      const user = await tx.utilisateur.findUnique({
+        where: { id: userId },
+      });
+      if (user?.fcmToken) {
+        await this.firebase.sendNotification(
+          user.fcmToken,
+          '💸 Nouvelle transaction',
+          `${dto.type === 'DEPENSE' ? '- ' : '+ '}${dto.montant} F enregistré`,
+        );
       }
 
       return transaction;
