@@ -19,7 +19,8 @@ export class TransactionsService {
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
-    return this.prisma.$transaction(async (tx) => {
+    // ✅ Transaction Prisma SANS Firebase dedans
+    const transaction = await this.prisma.$transaction(async (tx) => {
       let compteId = dto.compteId;
       if (!compteId) {
         const compteDefaut = await tx.compte.findFirst({
@@ -39,6 +40,7 @@ export class TransactionsService {
           compteId = compteDefaut.id;
         }
       }
+
       const compte = await tx.compte.findFirst({
         where: { id: compteId, utilisateurId: userId, deletedAt: null },
       });
@@ -80,8 +82,12 @@ export class TransactionsService {
         await this.verifierBudget(tx, userId, dto.categorieId);
       }
 
-      // ✅ Notification envoyée APRÈS succès de la transaction
-      const user = await tx.utilisateur.findUnique({
+      return transaction;
+    });
+
+    // ✅ Notification EN DEHORS de la transaction Prisma
+    try {
+      const user = await this.prisma.utilisateur.findUnique({
         where: { id: userId },
       });
       if (user?.fcmToken) {
@@ -91,9 +97,11 @@ export class TransactionsService {
           `${dto.type === 'DEPENSE' ? '- ' : '+ '}${dto.montant} F enregistré`,
         );
       }
+    } catch (e) {
+      console.error('❌ Erreur notification:', e);
+    }
 
-      return transaction;
-    });
+    return transaction;
   }
 
   async findAll(userId: string, filters?: FilterTransactionDto) {
@@ -204,7 +212,6 @@ export class TransactionsService {
     const montantTotal = totalDepense._sum.montant ?? 0;
     const pourcentage = (montantTotal / budget.montantLimite) * 100;
 
-    // ✅ Notifie à chaque dépense si >= 85% — simple et efficace
     if (pourcentage >= 85) {
       await this.notificationsService.notifierBudgetDepasse(
         userId,

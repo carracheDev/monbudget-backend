@@ -6,14 +6,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class EpargneService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private firebase: FirebaseService, // ✅ ajouté
+  ) {}
 
-  // Créer un objectif
   async create(userId: string, dto: CreateObjectifDto) {
-    // Vérifier si un objectif avec ce nom existe déjà
     const existant = await this.prisma.objectifEpargne.findFirst({
       where: { nom: dto.nom, utilisateurId: userId, deletedAt: null },
     });
@@ -26,30 +28,26 @@ export class EpargneService {
         nom: dto.nom,
         icone: dto.icone,
         montantCible: dto.montantCible,
-        dateEcheance: new Date(dto.dateEcheance), // ← convertir en Date
+        dateEcheance: new Date(dto.dateEcheance),
         description: dto.description,
         utilisateurId: userId,
       },
     });
   }
 
-  // Lister tous les objectifs
   async findAll(userId: string) {
     return this.prisma.objectifEpargne.findMany({
       where: { utilisateurId: userId, deletedAt: null },
-      include: { contributions: true }, // ← voir les versements
+      include: { contributions: true },
     });
   }
 
-  // Supprimer un objectif (soft delete)
   async remove(userId: string, objectifId: string) {
     const objectif = await this.prisma.objectifEpargne.findFirst({
       where: { id: objectifId, utilisateurId: userId, deletedAt: null },
     });
 
-    if (!objectif) {
-      throw new NotFoundException('Objectif introuvable');
-    }
+    if (!objectif) throw new NotFoundException('Objectif introuvable');
 
     await this.prisma.objectifEpargne.update({
       where: { id: objectifId },
@@ -57,18 +55,13 @@ export class EpargneService {
     });
   }
 
-  // Ajouter une contribution à un objectif
   async addContribution(userId: string, dto: CreateContributionDto) {
-    // Vérifier que l'objectif appartient à l'utilisateur
     const objectif = await this.prisma.objectifEpargne.findFirst({
       where: { id: dto.objectifId, utilisateurId: userId, deletedAt: null },
     });
 
-    if (!objectif) {
-      throw new NotFoundException('Objectif introuvable');
-    }
+    if (!objectif) throw new NotFoundException('Objectif introuvable');
 
-    // Créer la contribution
     const contribution = await this.prisma.contribution.create({
       data: {
         montant: dto.montant,
@@ -77,16 +70,42 @@ export class EpargneService {
       },
     });
 
-    // Mettre à jour montantActuel de l'objectif
+    // ✅ Calculer le nouveau montant
     const nouveauMontant = objectif.montantActuel + dto.montant;
+    const objectifAtteint = nouveauMontant >= objectif.montantCible;
+
+    // ✅ Mettre à jour AVANT la notification
     await this.prisma.objectifEpargne.update({
       where: { id: dto.objectifId },
       data: {
         montantActuel: nouveauMontant,
-        // Si objectif atteint → statut TERMINE
-        statut: nouveauMontant >= objectif.montantCible ? 'TERMINE' : 'ACTIF',
+        statut: objectifAtteint ? 'TERMINE' : 'ACTIF',
       },
     });
+
+    // ✅ Notification APRÈS la mise à jour
+    try {
+      const user = await this.prisma.utilisateur.findUnique({
+        where: { id: userId },
+      });
+      if (user?.fcmToken) {
+        if (objectifAtteint) {
+          await this.firebase.sendNotification(
+            user.fcmToken,
+            '🎉 Objectif atteint !',
+            `Bravo ! Vous avez atteint votre objectif "${objectif.nom}"`,
+          );
+        } else {
+          await this.firebase.sendNotification(
+            user.fcmToken,
+            '🐷 Contribution ajoutée',
+            `${dto.montant} F ajoutés à "${objectif.nom}"`,
+          );
+        }
+      }
+    } catch (e) {
+      console.error('❌ Erreur notification épargne:', e);
+    }
 
     return contribution;
   }
