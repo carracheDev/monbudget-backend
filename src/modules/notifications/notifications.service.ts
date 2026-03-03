@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TypeNotification } from '@prisma/client';
+import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private firebase: FirebaseService, // ✅ Ajouté
+  ) {}
 
   async creerNotification(
     utilisateurId: string,
@@ -36,15 +40,29 @@ export class NotificationsService {
 
     this.logger.warn(`[Budget] ${message} — userId: ${utilisateurId}`);
 
-    // TODO: Envoyer FCM push notification ici
-
-    return this.creerNotification(
+    // ✅ 1. Sauvegarder la notification en base
+    await this.creerNotification(
       utilisateurId,
       titre,
       message,
       TypeNotification.BUDGET,
       { pourcentage, categorieNom },
     );
+
+    // ✅ 2. Envoyer le push FCM
+    try {
+      const user = await this.prisma.utilisateur.findUnique({
+        where: { id: utilisateurId },
+      });
+      if (user?.fcmToken) {
+        await this.firebase.sendNotification(user.fcmToken, titre, message);
+        this.logger.log(`✅ Push FCM budget envoyé à userId: ${utilisateurId}`);
+      } else {
+        this.logger.warn(`⚠️ Pas de fcmToken pour userId: ${utilisateurId}`);
+      }
+    } catch (e) {
+      this.logger.error(`❌ Erreur FCM budget: ${e.message}`);
+    }
   }
 
   async getNotificationsNonLues(utilisateurId: string) {
@@ -96,18 +114,15 @@ export class NotificationsService {
   }
 
   async getAllNotifications(utilisateurId: string) {
-  return this.prisma.notification.findMany({
-    where: {
-      utilisateurId,
-      deletedAt: null,
-    },
-    orderBy: { dateCreation: 'desc' },
-  });
-}
+    return this.prisma.notification.findMany({
+      where: {
+        utilisateurId,
+        deletedAt: null,
+      },
+      orderBy: { dateCreation: 'desc' },
+    });
+  }
 
-  /**
-   * Supprimer une notification par son ID
-   */
   async supprimerNotification(notificationId: string, utilisateurId: string) {
     return this.prisma.notification.updateMany({
       where: {
@@ -120,18 +135,12 @@ export class NotificationsService {
     });
   }
 
-  /**
-   * Supprimer toutes les notifications de type BUDGET pour un utilisateur
-   * (utilisé lors de la suppression d'un budget)
-   */
   async supprimerNotificationsBudget(utilisateurId: string, categorieNom?: string) {
     return this.prisma.notification.updateMany({
       where: {
         utilisateurId,
         type: TypeNotification.BUDGET,
         deletedAt: null,
-        // Si un nom de catégorie est fourni, on peut filtrer par les données
-        // Mais comme donnees est un JSON, on utilise une approche différente
       },
       data: {
         deletedAt: new Date(),

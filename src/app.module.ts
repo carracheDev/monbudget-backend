@@ -11,7 +11,6 @@ import { PortefeuilleModule } from './modules/portefeuille/portefeuille.module';
 import { RapportsModule } from './modules/rapports/rapports.module';
 import { ComptesModule } from './modules/comptes/comptes.module';
 import { ParametresModule } from './modules/parametres/parametres.module';
-import { FirebaseService } from './modules/firebase/firebase.service';
 import { FirebaseModule } from './modules/firebase/firebase.module';
 
 @Module({
@@ -19,7 +18,7 @@ import { FirebaseModule } from './modules/firebase/firebase.module';
     ConfigModule.forRoot({
        isGlobal: true,
       envFilePath: process.env.NODE_ENV === 'production' ? '.env' : '.env.local',
-      }),
+    }),
     PrismaModule,
     AuthModule,
     CategoriesModule,
@@ -33,6 +32,7 @@ import { FirebaseModule } from './modules/firebase/firebase.module';
     ParametresModule,
     FirebaseModule,
   ],
-  providers: [FirebaseService],
+  providers: [],
 })
 export class AppModule {}
+

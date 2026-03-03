@@ -19,7 +19,9 @@ export class TransactionsService {
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
-    // ✅ Transaction Prisma SANS Firebase dedans
+    let budgetData: { pourcentage: number; categorieNom: string } | null = null;
+
+    // ✅ Transaction Prisma - PAS de notifications dedans
     const transaction = await this.prisma.$transaction(async (tx) => {
       let compteId = dto.compteId;
       if (!compteId) {
@@ -78,27 +80,44 @@ export class TransactionsService {
         data: { solde: nouveauSolde },
       });
 
+      // ✅ On calcule le budget DANS la transaction mais on NE notifie PAS ici
       if (dto.type === TypeTransaction.DEPENSE && dto.categorieId) {
-        await this.verifierBudget(tx, userId, dto.categorieId);
+        budgetData = await this.verifierBudget(tx, userId, dto.categorieId);
       }
 
       return transaction;
     });
 
-    // ✅ Notification EN DEHORS de la transaction Prisma
+    // ✅ Toutes les notifications EN DEHORS de la transaction Prisma
+
+    // Notification transaction
     try {
       const user = await this.prisma.utilisateur.findUnique({
         where: { id: userId },
       });
       if (user?.fcmToken) {
+        const typeLabel = dto.type === TypeTransaction.DEPENSE ? '- ' : '+ ';
         await this.firebase.sendNotification(
           user.fcmToken,
           '💸 Nouvelle transaction',
-          `${dto.type === 'DEPENSE' ? '- ' : '+ '}${dto.montant} F enregistré`,
+          `${typeLabel}${dto.montant} F enregistré`,
         );
       }
     } catch (e) {
-      console.error('❌ Erreur notification:', e);
+      console.error('❌ Erreur notification transaction:', e);
+    }
+
+    // ✅ Notification budget si dépassement 85%
+    if (budgetData && (budgetData as any).pourcentage >= 85) {
+      try {
+        await this.notificationsService.notifierBudgetDepasse(
+          userId,
+          (budgetData as any).categorieNom,
+          (budgetData as any).pourcentage,
+        );
+      } catch (e) {
+        console.error('❌ Erreur notification budget:', e);
+      }
     }
 
     return transaction;
@@ -177,11 +196,12 @@ export class TransactionsService {
     };
   }
 
+  // ✅ Retourne les données du budget sans appeler les notifications
   private async verifierBudget(
     tx: Prisma.TransactionClient,
     userId: string,
     categorieId: string,
-  ) {
+  ): Promise<{ pourcentage: number; categorieNom: string } | null> {
     const budget = await tx.budget.findFirst({
       where: {
         utilisateurId: userId,
@@ -192,7 +212,7 @@ export class TransactionsService {
       include: { categorie: true },
     });
 
-    if (!budget) return;
+    if (!budget) return null;
 
     const debutMois = new Date();
     debutMois.setDate(1);
@@ -212,14 +232,9 @@ export class TransactionsService {
     const montantTotal = totalDepense._sum.montant ?? 0;
     const pourcentage = (montantTotal / budget.montantLimite) * 100;
 
-    if (pourcentage >= 85) {
-      await this.notificationsService.notifierBudgetDepasse(
-        userId,
-        budget.categorie.nom,
-        pourcentage,
-      );
-    }
-
-    return { pourcentage, montantTotal, limite: budget.montantLimite };
+    return {
+      pourcentage,
+      categorieNom: budget.categorie.nom,
+    };
   }
 }

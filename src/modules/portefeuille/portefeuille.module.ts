@@ -5,14 +5,13 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { FirebaseService } from '../firebase/firebase.service';
 
 @Module({
   imports: [
     PrismaModule,
     NotificationsModule,
     JwtModule.registerAsync({
-      imports: [ConfigModule, FirebaseService],
+      imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         secret: config.get('JWT_SECRET'),
         signOptions: { expiresIn: '15m' },
