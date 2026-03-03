@@ -20,8 +20,7 @@ model Utilisateur {
   telephone         String?
   avatarUrl         String?
   devise            String    @default("XOF")
-  fcmToken  String? // ✅ ajouter
-  
+  fcmToken          String? 
   // Sécurité & Auth
   emailVerifie      Boolean   @default(false)
   telephoneVerifie  Boolean   @default(false)

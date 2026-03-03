@@ -8,12 +8,14 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FilterTransactionDto } from './dto/filter-transaction.dto';
 import { Prisma, TypeTransaction } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private firebase: FirebaseService,
   ) {}
 
   async create(userId: string, dto: CreateTransactionDto) {
@@ -37,6 +39,17 @@ export class TransactionsService {
           compteId = compteDefaut.id;
         }
       }
+        const user = await this.prisma.utilisateur.findUnique({
+        where: { id: userId },
+        });
+
+        if (user?.fcmToken) {
+        await this.firebase.sendNotification(
+        user.fcmToken,
+        '💸 Nouvelle transaction',
+        `${dto.type === 'DEPENSE' ? '- ' : '+ '}${dto.montant} F enregistré`,
+       );
+     }
 
       const compte = await tx.compte.findFirst({
         where: { id: compteId, utilisateurId: userId, deletedAt: null },

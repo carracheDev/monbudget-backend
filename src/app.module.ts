@@ -11,6 +11,8 @@ import { PortefeuilleModule } from './modules/portefeuille/portefeuille.module';
 import { RapportsModule } from './modules/rapports/rapports.module';
 import { ComptesModule } from './modules/comptes/comptes.module';
 import { ParametresModule } from './modules/parametres/parametres.module';
+import { FirebaseService } from './modules/firebase/firebase.service';
+import { FirebaseModule } from './modules/firebase/firebase.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { ParametresModule } from './modules/parametres/parametres.module';
     RapportsModule,
     ComptesModule,
     ParametresModule,
+    FirebaseModule,
   ],
+  providers: [FirebaseService],
 })
 export class AppModule {}
