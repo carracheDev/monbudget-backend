@@ -4,55 +4,42 @@ import * as admin from 'firebase-admin';
 
 @Injectable()
 export class FirebaseService implements OnModuleInit {
-  private app: admin.app.App;
   private readonly logger = new Logger(FirebaseService.name);
-  private isFirebaseInitialized = false;
+  private isInitialized = false;
 
   constructor(private config: ConfigService) {}
 
   onModuleInit() {
-    this.initializeFirebase();
-  }
+    const projectId = this.config.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = this.config.get<string>('FIREBASE_CLIENT_EMAIL') || process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = (this.config.get<string>('FIREBASE_PRIVATE_KEY') || process.env.FIREBASE_PRIVATE_KEY)?.replace(/\\n/g, '\n');
 
-  private initializeFirebase() {
-    const projectId = this.config.get('FIREBASE_PROJECT_ID');
-    const clientEmail = this.config.get('FIREBASE_CLIENT_EMAIL');
-    const privateKey = this.config.get('FIREBASE_PRIVATE_KEY');
-
-    // Check if all required Firebase credentials are present
     if (!projectId || !clientEmail || !privateKey) {
       this.logger.warn('⚠️ Firebase credentials not configured. Firebase notifications will be disabled.');
-      this.logger.warn(`  - FIREBASE_PROJECT_ID: ${projectId ? 'set' : 'MISSING'}`);
-      this.logger.warn(`  - FIREBASE_CLIENT_EMAIL: ${clientEmail ? 'set' : 'MISSING'}`);
-      this.logger.warn(`  - FIREBASE_PRIVATE_KEY: ${privateKey ? 'set' : 'MISSING'}`);
-      this.isFirebaseInitialized = false;
+      if (!projectId) this.logger.warn('  - FIREBASE_PROJECT_ID: MISSING');
+      if (!clientEmail) this.logger.warn('  - FIREBASE_CLIENT_EMAIL: MISSING');
+      if (!privateKey) this.logger.warn('  - FIREBASE_PRIVATE_KEY: MISSING');
       return;
     }
 
     if (!admin.apps.length) {
-      try {
-        this.app = admin.initializeApp({
-          credential: admin.credential.cert({
-            projectId: projectId,
-            clientEmail: clientEmail,
-            privateKey: privateKey.replace(/\\n/g, '\n'),
-          }),
-        });
-        this.isFirebaseInitialized = true;
-        this.logger.log('✅ Firebase initialisé avec succès');
-      } catch (error) {
-        this.logger.error('❌ Erreur lors de l\'initialisation de Firebase:', error);
-        this.isFirebaseInitialized = false;
-      }
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+      });
+      this.isInitialized = true;
+      this.logger.log('✅ Firebase Admin SDK initialisé');
     }
   }
 
   async sendNotification(fcmToken: string, title: string, body: string, data?: Record<string, string>) {
-    if (!this.isFirebaseInitialized) {
-      this.logger.warn('⚠️ Firebase non initialisé. Notification non envoyée.');
+    if (!this.isInitialized) {
+      this.logger.warn('⚠️ Firebase non initialisé — notification ignorée');
       return;
     }
-
     try {
       await admin.messaging().send({
         token: fcmToken,
@@ -66,9 +53,9 @@ export class FirebaseService implements OnModuleInit {
           },
         },
       });
-      this.logger.log('✅ Notification envoyée:', title);
-    } catch (error) {
-      this.logger.error('❌ Erreur notification:', error);
+      this.logger.log(`✅ Notification envoyée: ${title}`);
+    } catch (e) {
+      this.logger.error(`❌ Erreur notification: ${e}`);
     }
   }
 }
