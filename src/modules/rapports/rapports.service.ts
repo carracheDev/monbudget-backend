@@ -10,6 +10,13 @@ import ExcelJS from 'exceljs';
 export class RapportsService {
   constructor(private prisma: PrismaService) {}
 
+  // Helper pour formater les montants correctement pour PDF et Excel
+  private formatMontant(montant: number): string {
+    // Utiliser un espace normal comme séparateur de milliers au lieu de l'espace insécable
+    // qui peut causer des problèmes dans PDFKit
+    return montant.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
   // Calculer la date de début selon la période et les paramètres fournis
   private getDebutPeriode(dto: FilterRapportDto): Date {
     // Utiliser le mois et l'année fournis par l'utilisateur, sinon defaults
@@ -250,7 +257,7 @@ export class RapportsService {
       .fontSize(16)
       .font('Helvetica-Bold')
       .text(
-        `${resume.totalRevenus.toLocaleString('fr-FR')} XOF`,
+        `${this.formatMontant(resume.totalRevenus)} XOF`,
         55,
         startY + 30,
         { width: colWidth - 20, align: 'center' },
@@ -269,7 +276,7 @@ export class RapportsService {
       .fontSize(16)
       .font('Helvetica-Bold')
       .text(
-        `${resume.totalDepenses.toLocaleString('fr-FR')} XOF`,
+        `${this.formatMontant(resume.totalDepenses)} XOF`,
         55 + colWidth,
         startY + 30,
         { width: colWidth - 20, align: 'center' },
@@ -288,7 +295,7 @@ export class RapportsService {
       .fontSize(16)
       .font('Helvetica-Bold')
       .text(
-        `${resume.solde.toLocaleString('fr-FR')} XOF`,
+        `${this.formatMontant(resume.solde)} XOF`,
         55 + colWidth * 2,
         startY + 30,
         { width: colWidth - 20, align: 'center' },
@@ -343,7 +350,7 @@ export class RapportsService {
           .fontSize(11)
           .font('Helvetica-Bold')
           .text(
-            `${cat.montant.toLocaleString('fr-FR')} XOF`,
+            `${this.formatMontant(cat.montant)} XOF`,
             doc.page.width - 100,
             y + 7,
             { width: 90, align: 'right' },
