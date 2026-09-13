@@ -1,6 +1,4 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# MonBudget API
 
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
 [circleci-url]: https://circleci.com/gh/nestjs/nest
@@ -21,9 +19,37 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+Backend NestJS de MonBudget, avec PostgreSQL et Prisma.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Configuration locale
+
+Copier `.env.example` vers `.env.local`, puis créer la base PostgreSQL :
+
+```bash
+sudo -u postgres createdb monbudget_db
+npm install
+npx prisma migrate dev
+npm run start:dev
+```
+
+Le serveur écoute sur `http://localhost:3000`. La route `GET /health` renvoie
+`{"status":"ok"}`.
+
+Les secrets Firebase et Flutterwave ne sont nécessaires que pour les fonctions
+qui les utilisent. Ne jamais les committer.
+
+## Variables Render
+
+Configurer au minimum les variables suivantes dans le service Render :
+
+- `DATABASE_URL` : URL PostgreSQL Neon, avec SSL si fournie par Neon.
+- `JWT_SECRET` et `JWT_REFRESH_SECRET` : secrets longs et aléatoires.
+- `FRONTEND_URL` : origine autorisée du client.
+- `NODE_ENV=production` et, selon les fonctions activées, les variables Firebase
+  et Flutterwave listées dans `.env.example`.
+
+Le Dockerfile exécute `prisma migrate deploy` au démarrage du conteneur, puis
+lance NestJS sur le port fourni par `PORT` par Render.
 
 ## Project setup
 

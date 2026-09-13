@@ -13,6 +13,8 @@ import { ComptesModule } from './modules/comptes/comptes.module';
 import { ParametresModule } from './modules/parametres/parametres.module';
 import { FirebaseModule } from './modules/firebase/firebase.module';
 import { DownloadModule } from './modules/download/download.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -34,7 +36,8 @@ import { DownloadModule } from './modules/download/download.module';
     FirebaseModule,
     DownloadModule,
   ],
-  providers: [],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaClient, TypeCategorie } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -108,26 +109,30 @@ async function main() {
   ];
 
   for (const cat of categories) {
-    // Vérifier si elle existe déjà avant de créer
     const existante = await prisma.categorie.findFirst({
-      where: { nom: cat.nom, estDefaut: true },
+      where: { nom: cat.nom, utilisateurId: null },
+      select: { id: true },
     });
 
-    if (!existante) {
-      await prisma.categorie.create({
-        data: {
-          nom: cat.nom,
-          icone: cat.icone,
-          couleur: cat.couleur,
-          type: cat.type,
-          estDefaut: true,
-          utilisateurId: null,
-        },
-      });
-      console.log(`✅ Créée : ${cat.icone} ${cat.nom}`);
-    } else {
-      console.log(`⏭️  Déjà existante : ${cat.nom}`);
-    }
+    await prisma.categorie.upsert({
+      where: { id: existante?.id ?? randomUUID() },
+      update: {
+        icone: cat.icone,
+        couleur: cat.couleur,
+        type: cat.type,
+        estDefaut: true,
+      },
+      create: {
+        nom: cat.nom,
+        icone: cat.icone,
+        couleur: cat.couleur,
+        type: cat.type,
+        estDefaut: true,
+        utilisateurId: null,
+      },
+    });
+
+    console.log(`✅ Catégorie synchronisée : ${cat.icone} ${cat.nom}`);
   }
 
   console.log('\n🎉 Seed terminé !');
